@@ -1,0 +1,1681 @@
+---
+title: "Immigrants (PRs)"
+author: "Pascal Schmidt"
+date: "May 29, 2019"
+output: html_document
+---
+
+```{r}
+knitr::opts_chunk$set(cache = TRUE, message = FALSE, warning = FALSE, fig.height = 12, fig.widht = 18, echo = FALSE, results = "asis")
+```
+
+```{r}
+root_dir <- rprojroot::find_rstudio_root_file()
+library(tidyverse)
+```
+
+### Loading and Setting up the Data
+
+```{r}
+pr_landing <- haven::read_sas("Data/pr.sas7bdat")
+chr_to_NA <- function(x) {
+  ifelse(x == "", NA, x)
+}
+
+col_names <- tidyselect::vars_select(base::names(pr_landing), dplyr::contains("DT")) %>%
+  base::unname() %>%
+  {
+    names(pr_landing)[!(names(pr_landing) %in% c("census_date", .))]
+  }
+
+pr_landing[, col_names] <- lapply(pr_landing[, col_names], chr_to_NA)
+
+# pr_landing %>%
+#   dplyr::select(cid) %>%
+#   write.table("Data/DavidPrCID.txt", sep = "\n", row.names = FALSE)
+```
+
+### Conditional Matching Addresses
+
+```{r}
+pr_landing %>%
+  dplyr::select(cid, match_IRCC_ARUID, match_IRCC_CSD, match_IRCC_DA, match_IRCC_CD, match_IRCC_PROV, match_IRCC_ER, match_IRCC_CMA) %>%
+  dplyr::filter_at(vars(match_IRCC_ARUID:match_IRCC_CMA), all_vars(is.na(.) | . == "No Match" | . == "Match")) %>%
+  dplyr::mutate_at(vars(match_IRCC_ARUID:match_IRCC_CMA), ~ ifelse(. == "Match", 1, 0)) %>%
+
+  # ARUID
+  dplyr::mutate(
+    consistency_ARUID = sum(match_IRCC_ARUID, na.rm = TRUE) / nrow(.),
+    na_ARUID = sum(is.na(match_IRCC_ARUID)) / nrow(.)
+  ) %>%
+  dplyr::filter(match_IRCC_ARUID == 0 | is.na(match_IRCC_ARUID)) %>%
+
+  # DA
+  dplyr::mutate(
+    consistency_DA = sum(match_IRCC_DA, na.rm = TRUE) / nrow(.),
+    na_DA = sum(is.na(match_IRCC_DA)) / nrow(.)
+  ) %>%
+  dplyr::filter(match_IRCC_DA == 0 | is.na(match_IRCC_DA)) %>%
+
+  # CSD
+  dplyr::mutate(
+    consistency_CSD = sum(match_IRCC_CSD, na.rm = TRUE) / nrow(.),
+    na_CSD = sum(is.na(match_IRCC_CSD)) / nrow(.)
+  ) %>%
+  dplyr::filter(match_IRCC_CSD == 0 | is.na(match_IRCC_CSD)) %>%
+
+  # CD
+  dplyr::mutate(
+    consistency_CD = sum(match_IRCC_CD, na.rm = TRUE) / nrow(.),
+    na_CD = sum(is.na(match_IRCC_CD)) / nrow(.)
+  ) %>%
+  dplyr::filter(match_IRCC_CD == 0 | is.na(match_IRCC_CD)) %>%
+
+  # ER
+  dplyr::mutate(
+    consistency_ER = sum(match_IRCC_ER, na.rm = TRUE) / nrow(.),
+    na_ER = sum(is.na(match_IRCC_ER)) / nrow(.)
+  ) %>%
+  dplyr::filter(match_IRCC_ER == 0 | is.na(match_IRCC_ER)) %>%
+
+  # CMA
+  dplyr::mutate(
+    consistency_CMA = sum(match_IRCC_CMA, na.rm = TRUE) / nrow(.),
+    na_CMA = sum(is.na(match_IRCC_CMA)) / nrow(.)
+  ) %>%
+  dplyr::filter(match_IRCC_CMA == 0 | is.na(match_IRCC_CMA)) %>%
+
+  # PROV
+  dplyr::mutate(
+    consistency_PROV = sum(match_IRCC_PROV, na.rm = TRUE) / nrow(.),
+    na_PROV = sum(is.na(match_IRCC_PROV)) / nrow(.)
+  ) %>%
+  dplyr::filter(match_IRCC_PROV == 0 | is.na(match_IRCC_PROV)) %>%
+  dplyr::select(consistency_ARUID:na_PROV) %>%
+  dplyr::mutate_all(round, 3) %>%
+  dplyr::mutate_all(~ . * 100)
+```
+
+### Matching Addresses
+
+```{r}
+pr_landing %>%
+  dplyr::select(cid, match_IRCC_ARUID, match_IRCC_CSD, match_IRCC_DA, match_IRCC_CD, match_IRCC_PROV, match_IRCC_ER, match_IRCC_CMA) %>%
+  dplyr::mutate_at(vars(match_IRCC_ARUID:match_IRCC_CMA), ~ ifelse(. == "CENSUS_Missing", 2, .)) %>%
+  dplyr::mutate_at(vars(match_IRCC_ARUID:match_IRCC_CMA), ~ ifelse(. == "Match", 1, .)) %>%
+  dplyr::mutate_at(vars(match_IRCC_ARUID:match_IRCC_CMA), ~ ifelse(. == "No Match", 0, .)) %>%
+  dplyr::mutate_all(as.integer) -> matching_addresses
+
+# ARUID
+matching_addresses %>%
+  dplyr::filter(match_IRCC_ARUID == 1 | match_IRCC_ARUID == 0 | is.na(match_IRCC_ARUID)) %>%
+  dplyr::mutate(ARUID = sum(match_IRCC_ARUID, na.rm = TRUE) / nrow(.)) %>%
+  dplyr::distinct(ARUID) -> ARUID
+
+# DA
+matching_addresses %>%
+  dplyr::filter(match_IRCC_DA == 1 | match_IRCC_DA == 0 | is.na(match_IRCC_DA)) %>%
+  dplyr::mutate(DA = sum(match_IRCC_DA, na.rm = TRUE) / nrow(.)) %>%
+  dplyr::distinct(DA) -> DA
+
+# CSD
+matching_addresses %>%
+  dplyr::filter(match_IRCC_CSD == 1 | match_IRCC_CSD == 0 | is.na(match_IRCC_CSD)) %>%
+  dplyr::mutate(CSD = sum(match_IRCC_CSD, na.rm = TRUE) / nrow(.)) %>%
+  dplyr::distinct(CSD) -> CSD
+
+# CD
+matching_addresses %>%
+  dplyr::filter(match_IRCC_CD == 1 | match_IRCC_CD == 0 | is.na(match_IRCC_CD)) %>%
+  dplyr::mutate(CD = sum(match_IRCC_CD, na.rm = TRUE) / nrow(.)) %>%
+  dplyr::distinct(CD) -> CD
+
+# ER
+matching_addresses %>%
+  dplyr::filter(., match_IRCC_ER == 1 | match_IRCC_ER == 0 | is.na(match_IRCC_ER)) %>%
+  dplyr::mutate(ER = sum(match_IRCC_ER, na.rm = TRUE) / nrow(.)) %>%
+  dplyr::distinct(ER) -> ER
+
+# CMA
+matching_addresses %>%
+  dplyr::filter(., match_IRCC_CMA == 1 | match_IRCC_CMA == 0 | is.na(match_IRCC_CMA)) %>%
+  dplyr::mutate(CMA = sum(match_IRCC_CMA, na.rm = TRUE) / nrow(.)) %>%
+  dplyr::distinct(CMA) -> CMA
+
+# PROV
+matching_addresses %>%
+  dplyr::filter(., match_IRCC_PROV == 1 | match_IRCC_PROV == 0 | is.na(match_IRCC_PROV)) %>%
+  dplyr::mutate(PROV = sum(match_IRCC_PROV, na.rm = TRUE) / nrow(.)) %>%
+  dplyr::distinct(PROV) -> PROV
+
+cbind(ARUID, DA, CSD, CD, ER, CMA, PROV) %>%
+  dplyr::mutate_all(round, 3) %>%
+  dplyr::mutate_all(~ . * 100) %>%
+  dplyr::distinct(ARUID, .keep_all = TRUE) %>%
+  tidyr::gather(key = "Geography", value = "value") %>%
+  dplyr::mutate(Geography = factor(Geography, levels = unique(.$Geography))) -> geo_match
+
+png("PR/overall/geo_match.png", height = 200, width = 200)
+
+geo_match_table <- gridExtra::tableGrob(geo_match)
+gridExtra::grid.arrange(geo_match_table)
+
+dev.off()
+
+ggplot(geo_match, aes(x = Geography, y = value)) +
+  geom_bar(stat = "identity") +
+  ylab(expression("%")) +
+  ggtitle("Matching Addresses for Various Geographical Levels for PRs") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 20),
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.y = element_text(size = 15)
+  )
+ggsave("PR/overall/geography-matching.jpeg", width = 10)
+```
+
+```{r}
+stat_can_geo <- haven::read_sas("statcan_geography.sas7bdat",
+  cols_only = c("GEOVAL", "PROVINCE_EN")
+)
+
+pr_landing %>%
+  dplyr::left_join(stat_can_geo, by = c("PROV" = "GEOVAL")) -> pr_landing
+
+# remove form environment
+base::rm(stat_can_geo)
+```
+
+```{r}
+pr_landing %>%
+  dplyr::mutate(PROVINCE_EN = ifelse(PROVINCE_EN %in% c("Northwest Territories", "Yukon", "Nunavut"), "Territories", PROVINCE_EN)) %>%
+  dplyr::select(match_IRCC_ARUID, PROVINCE_EN) %>%
+  dplyr::filter(match_IRCC_ARUID == "Match" | match_IRCC_ARUID == "No Match" | is.na(match_IRCC_ARUID)) %>%
+  dplyr::group_by(match_IRCC_ARUID, PROVINCE_EN) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(PROVINCE_EN) %>%
+  dplyr::mutate(prop = round((n / sum(n)) * 100, 1)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(total = sum(n)) %>%
+  dplyr::group_by(PROVINCE_EN) %>%
+  dplyr::mutate(dist = round((sum(n) / total) * 100, 1)) %>%
+  dplyr::filter(!is.na(match_IRCC_ARUID)) %>%
+  dplyr::mutate(
+    total = sum(n),
+    cons_rate = round((n / total) * 100, 1)
+  ) %>%
+  dplyr::arrange(desc(total)) %>%
+  write.csv("PR/by_province/province.csv")
+```
+
+
+#### Visualizing matching Addresses for pr_landing for ARUID Geography Level
+
+```{r fig.width = 18, fig.height = 12, results='asis'}
+arsenal::tableby(type ~ value, data = pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value))) %>%
+  summary()
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID) %>%
+  {
+    data.frame(
+      var_1 = unlist(str_extract_all(colnames(.), ".*IRCC.*")),
+      var_2 = unlist(str_extract_all(colnames(.), ".*CSDD.*"))
+    )
+  } -> two_by_two
+
+
+for (i in 1:nrow(two_by_two)) {
+  print(table(
+    IRCC = pr_landing[, purrr::pluck(two_by_two, 1, i) %>%
+      as.character()] %>%
+      unlist(use.names = FALSE) %>%
+      forcats::fct_explicit_na() %>%
+      as.character() %>%
+      ifelse(grepl("Match", .), paste0("IRCC ", .), .),
+    CSDD = pr_landing[, purrr::pluck(two_by_two, 2, i) %>%
+      as.character()] %>%
+      unlist(use.names = FALSE) %>%
+      forcats::fct_explicit_na() %>%
+      as.character() %>%
+      ifelse(grepl("Match", .), paste0("CSDD ", .), .)
+  ) %>%
+    knitr::kable())
+}
+
+
+##############################
+### Only Recent Immigrants ###
+##############################
+
+pr_landing %>%
+  dplyr::mutate(LAND_DT = as.character(LAND_DT) %>%
+    stringr::str_sub(start = 1, end = 4)) %>%
+  dplyr::filter(LAND_DT == "2015" | LAND_DT == "2016") -> recent_immigrants
+
+for (i in 1:nrow(two_by_two)) {
+  print(table(
+    IRCC = recent_immigrants[, purrr::pluck(two_by_two, 1, i) %>%
+      as.character()] %>%
+      unlist(use.names = FALSE) %>%
+      forcats::fct_explicit_na() %>%
+      as.character() %>%
+      ifelse(grepl("Match", .), paste0("IRCC ", .), .),
+    CSDD = recent_immigrants[, purrr::pluck(two_by_two, 2, i) %>%
+      as.character()] %>%
+      unlist(use.names = FALSE) %>%
+      forcats::fct_explicit_na() %>%
+      as.character() %>%
+      ifelse(grepl("Match", .), paste0("CSDD ", .), .)
+  ) %>%
+    knitr::kable())
+}
+```
+
+```{r}
+pr_landing %>%
+  dplyr::select(match_CSDD_CSD, match_IRCC_CSD) %>%
+  dplyr::filter_all(all_vars(is.na(.) | . == "Match" | . == "No Match")) -> df_CSD
+
+df_CSD %>%
+  dplyr::select(match_CSDD_CSD, match_IRCC_CSD) %>%
+  {
+    data.frame(
+      var_1 = unlist(str_extract_all(colnames(.), ".*IRCC.*")),
+      var_2 = unlist(str_extract_all(colnames(.), ".*CSDD.*"))
+    )
+  } -> two_by_two
+
+
+for (i in 1:nrow(two_by_two)) {
+  print(table(
+    IRCC = df_CSD[, purrr::pluck(two_by_two, 1, i) %>%
+      as.character()] %>%
+      unlist(use.names = FALSE) %>%
+      forcats::fct_explicit_na() %>%
+      as.character() %>%
+      ifelse(grepl("Match", .), paste0("IRCC ", .), .),
+    CSDD = df_CSD[, purrr::pluck(two_by_two, 2, i) %>%
+      as.character()] %>%
+      unlist(use.names = FALSE) %>%
+      forcats::fct_explicit_na() %>%
+      as.character() %>%
+      ifelse(grepl("Match", .), paste0("CSDD ", .), .)
+  ) %>%
+    knitr::kable())
+}
+```
+
+
+### Overall Matching Addresses by AREA_UID and Province
+
+```{r fig.height = 12, fig.widht = 18}
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(value, type) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  ggplot(data = ., aes(x = type, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 4) * 100, "%\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Set1")
+ggsave("PR/overall/overall-barplot-aruid.jpeg")
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(value, type) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  ggplot(data = ., aes(x = type, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 4) * 100, "%\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  ggtitle("PR: CSDD Addresses Have a Higher Matching Rate \n With Census at the ARUID Level \n CSDD Addresses Have a Lower Mismatching Rate") +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, vjust = 0.5, size = 25),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 18)
+  ) +
+  scale_fill_brewer(palette = "Set1")
+ggsave("PR/overall/overall-barplot-aruid-PRESENTATION.jpeg", width = 10, height = 8)
+
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(value, type) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/overall/overall-table-aruid.csv")
+
+
+################
+### Province ###
+################
+
+pr_landing %>%
+  dplyr::select(match_CSDD_PROV, match_IRCC_PROV) %>%
+  tidyr::gather(match_CSDD_PROV:match_IRCC_PROV, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_PROV" | type == "IRCC_PROV") %>%
+  dplyr::group_by(value, type) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  ggplot(data = ., aes(x = type, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 4) * 100, "%\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Set1")
+ggsave("PR/overall/overall-barplot-prov.jpeg", height = 12)
+
+pr_landing %>%
+  dplyr::select(match_CSDD_PROV, match_IRCC_PROV) %>%
+  tidyr::gather(match_CSDD_PROV:match_IRCC_PROV, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_PROV" | type == "IRCC_PROV") %>%
+  dplyr::group_by(value, type) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::arrange(type) %>%
+  write.csv(., "PR/overall/overall_table-prov.csv")
+```
+
+#### Not Matching/NA CSDD and non Missing IRCC
+
+```{r}
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID:match_IRCC_CD) %>%
+  dplyr::mutate(id = row_number()) %>%
+  tidyr::gather(match_CSDD_ARUID:match_IRCC_CD, key = "key", value = "value") %>%
+  dplyr::mutate(
+    type = str_remove_all(key, "match_.*_"),
+    key = str_extract_all(key, "(CSDD|IRCC)") %>%
+      unlist()
+  ) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  base::split(.$type) %>%
+  purrr::map(~ tidyr::spread(., key, value)) %>%
+  purrr::map(~ dplyr::filter(., (is.na(CSDD) | CSDD == "No Match") & IRCC == "Match")) %>%
+  base::do.call(rbind, .) %>%
+  ggplot(., aes(x = type, fill = type)) +
+  geom_bar()
+```
+
+#### Visualizing Matching Addersses by Sex for pr_landing
+
+```{r}
+dim_gender <- haven::read_sas("dim_gender.sas7bdat",
+  cols_only = c("GENDER_ID", "LONG_ENG_DESC")
+)
+
+pr_landing %>%
+  dplyr::left_join(dim_gender, by = c("SEX" = "GENDER_ID")) %>%
+  dplyr::select(-SEX) -> pr_landing
+
+# remove form environment
+base::rm(dim_gender)
+```
+
+```{r fig.width = 12, fig.height = 20}
+# with NA
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, LONG_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(LONG_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(LONG_ENG_DESC, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  ggplot(data = ., aes(x = type, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~LONG_ENG_DESC, ncol = 1) +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 4) * 100, "%", "\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Set1")
+ggsave("PR/sex/sex-barplot.jpeg")
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, LONG_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(LONG_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(LONG_ENG_DESC, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/sex/sex-table.csv")
+```
+
+#### Visualizing Matching Addersses by last known address closest to census
+
+```{r fig.height = 12}
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, closest_to_census) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  na.omit(value) %>%
+  ggplot(., aes(x = closest_to_census, fill = value)) +
+  geom_density(alpha = 0.3) +
+  facet_wrap(~type, ncol = 1)
+```
+
+### Matching Addresses by Marital Status
+
+```{r}
+dim_marital_status <- haven::read_sas("dim_marital_status.sas7bdat")
+
+pr_landing %>%
+  dplyr::left_join(dim_marital_status, by = c("MARSTAT" = "MARITAL_STATUS_ID")) %>%
+  dplyr::select(-MARSTAT) -> pr_landing
+
+# remove form environment
+base::rm(dim_marital_status)
+```
+
+```{r fig.width = 15, fig.height = 50}
+# with NA
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, LONG_ENG_DESC.y) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(LONG_ENG_DESC.y, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(LONG_ENG_DESC.y, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  ggplot(data = ., aes(x = type, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~LONG_ENG_DESC.y, ncol = 1) +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 4) * 100, "%", "\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Set1")
+ggsave("PR/marital-status/marital-status-barplot.jpeg")
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, LONG_ENG_DESC.y) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(LONG_ENG_DESC.y, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(LONG_ENG_DESC.y, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/marital-status/marital-status-table.csv")
+```
+
+#### Matching Addresses By Birth Dates
+
+```{r fig.height=12}
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, BIRTH_DT) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(
+    type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+      unlist(),
+    age = as.integer((lubridate::ymd("2016-05-10") - lubridate::as_date(BIRTH_DT)) / 365)
+  ) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  na.omit(value) %>%
+  ggplot(., aes(x = age, fill = value)) +
+  geom_density(alpha = 0.3) +
+  facet_wrap(~type, ncol = 1)
+```
+
+```{r}
+################################
+### CSDD/IRCC Match/No Match ###
+################################
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, BIRTH_DT) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(
+    type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+      unlist(),
+    age = as.integer((lubridate::ymd("2016-05-10") - lubridate::as_date(BIRTH_DT)) / 365)
+  ) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  na.omit(value) %>%
+  ggplot(., aes(x = age, fill = value)) +
+  geom_density(alpha = 0.3) +
+  facet_wrap(~type, ncol = 1)
+
+#############################
+### IRCC Density Plot Age ###
+#############################
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, BIRTH_DT) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(
+    type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+      unlist(),
+    age = as.integer((lubridate::ymd("2016-05-10") - lubridate::as_date(BIRTH_DT)) / 365)
+  ) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit(value) %>%
+  dplyr::filter(type == "IRCC_ARUID") %>%
+  ggplot(., aes(x = age)) +
+  geom_density(alpha = 0.3) +
+  scale_x_continuous(breaks = seq(0, 100, 2)) +
+  ggtitle("Density Plot Age")
+
+ggsave("PR/age/density-plot-distribution-IRCC.jpeg", width = 14)
+
+######################
+### Age Table IRCC ###
+######################
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, BIRTH_DT) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(
+    type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+      unlist(),
+    age = as.integer((lubridate::ymd("2016-05-10") - lubridate::as_date(BIRTH_DT)) / 365)
+  ) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(age, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(age, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "IRCC_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  write.csv(., "PR/age/age-table-IRCC.csv")
+
+######################
+### Age Table CSDD ###
+######################
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, BIRTH_DT) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(
+    type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+      unlist(),
+    age = as.integer((lubridate::ymd("2016-05-10") - lubridate::as_date(BIRTH_DT)) / 365)
+  ) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(age, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(age, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "CSDD_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  write.csv(., "PR/age/age-table-CSDD.csv")
+
+##########################
+### Age Group Bar Plot ###
+##########################
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, BIRTH_DT) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(
+    type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+      unlist(),
+    age = as.integer((lubridate::ymd("2016-05-10") - lubridate::as_date(BIRTH_DT)) / 365)
+  ) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::mutate(age_cat = cut(.$age, breaks = c(-1, 14, 19, 24, 29, 34, 39, 44, 49, 54, 59, 64, 130))) %>%
+  dplyr::group_by(age_cat, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(age_cat, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  ggplot(data = ., aes(x = type, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~age_cat, ncol = 1) +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 2) * 100, "%", "\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Set1")
+
+ggsave("PR/age/age-group-bar-plot.jpeg", height = 40, width = 25)
+
+#######################
+### Age Group Table ###
+#######################
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, BIRTH_DT) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(
+    type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+      unlist(),
+    age = as.integer((lubridate::ymd("2016-05-10") - lubridate::as_date(BIRTH_DT)) / 365)
+  ) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::mutate(age_cat = cut(.$age, breaks = c(-1, 14, 19, 24, 29, 34, 39, 44, 49, 54, 59, 64, 130))) %>%
+  dplyr::group_by(age_cat, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(age_cat, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  write.csv(., "PR/age/age-group-bar-plot-IRCC-CSDD.csv")
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, BIRTH_DT) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(
+    type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+      unlist(),
+    age = as.integer((lubridate::ymd("2016-05-10") - lubridate::as_date(BIRTH_DT)) / 365)
+  ) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit() %>%
+  dplyr::group_by(age, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(age, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "CSDD_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  dplyr::filter(value == "Match") %>%
+  ggplot(., aes(x = age, y = prop)) +
+  geom_smooth(span = 0.25, se = F) +
+  scale_x_continuous(breaks = seq(0, 130, 2)) +
+  ggtitle("Line Chart Matching CSDD With NA")
+
+ggsave("PR/age/line-chart-CSDD.jpeg", width = 12)
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, BIRTH_DT) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(
+    type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+      unlist(),
+    age = as.integer((lubridate::ymd("2016-05-10") - lubridate::as_date(BIRTH_DT)) / 365)
+  ) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit() %>%
+  dplyr::group_by(age, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(age, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "IRCC_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  dplyr::filter(value == "Match") %>%
+  ggplot(., aes(x = age, y = prop)) +
+  geom_smooth(span = 0.25, se = F) +
+  scale_x_continuous(breaks = seq(0, 130, 2)) +
+  ggtitle("Line Chart Matching IRCC With NA")
+
+ggsave("PR/age/line-chart-IRCC.jpeg", width = 12)
+```
+
+#### Matching Addresses by Occupation
+
+```{r}
+dim_occupation <- haven::read_sas("dim_occupation.sas7bdat",
+  cols_only = c("OCCUPATION_ID", "SKILL_L1_ENG_DESC", "SKILL_L2_ENG_DESC")
+)
+
+pr_landing %>%
+  dplyr::left_join(dim_occupation, by = c("OCCUPATION" = "OCCUPATION_ID")) %>%
+  dplyr::select(-OCCUPATION) -> pr_landing
+
+# remove form environment
+base::rm(dim_occupation)
+```
+
+```{r}
+# with NA
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, SKILL_L1_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(SKILL_L1_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(SKILL_L1_ENG_DESC, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  ggplot(data = ., aes(x = SKILL_L1_ENG_DESC, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~type, ncol = 2) +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 4) * 100, "%", "\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Set1")
+ggsave("PR/occupation/occupation-barplot.jpeg", width = 12, height = 9)
+
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, SKILL_L1_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(SKILL_L1_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(SKILL_L1_ENG_DESC, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/occupation/occupation-table.csv")
+```
+
+#### Matching Addresses By Study Level
+
+```{r}
+dim_educ_level <- haven::read_sas("dim_educ_level.sas7bdat",
+  cols_only = c("EDUC_LEVEL", "EDUC_LVL_ENG_DESC")
+)
+pr_landing %>%
+  dplyr::left_join(dim_educ_level, by = c("EDUC_LEVEL" = "EDUC_LEVEL")) %>%
+  dplyr::select(-EDUC_LEVEL) -> pr_landing
+
+# remove form environment
+base::rm(dim_educ_level)
+```
+
+```{r fig.height = 20, fig.width = 15}
+# with NA
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, EDUC_LVL_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(EDUC_LVL_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(EDUC_LVL_ENG_DESC, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  ggplot(data = ., aes(x = type, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~EDUC_LVL_ENG_DESC, ncol = 2) +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 2) * 100, "%", "\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Set1")
+ggsave("PR/study-level/study-level-barplot.jpeg", width = 12, height = 30)
+
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, EDUC_LVL_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(EDUC_LVL_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(EDUC_LVL_ENG_DESC, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/study-level/study-level-table.csv")
+```
+
+#### Matching Addresses By Total People 
+
+```{r fig.width = 10, fig.height=26}
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, YEARS_OF_SCHOOLING) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit() %>%
+  dplyr::group_by(YEARS_OF_SCHOOLING, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(YEARS_OF_SCHOOLING, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "CSDD_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  dplyr::filter(value == "Match") %>%
+  ggplot(., aes(x = YEARS_OF_SCHOOLING, y = prop)) +
+  geom_smooth(span = 0.25, se = T) +
+  scale_x_continuous(breaks = seq(0, 130, 2)) +
+  ggtitle("Line Chart Matching CSDD With NA for Years of Schooling")
+ggsave("PR/study-level/line-chart-years-of-schooling-CSDD.jpeg")
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, YEARS_OF_SCHOOLING) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit() %>%
+  dplyr::group_by(YEARS_OF_SCHOOLING, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(YEARS_OF_SCHOOLING, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "IRCC_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  dplyr::filter(value == "Match") %>%
+  ggplot(., aes(x = YEARS_OF_SCHOOLING, y = prop)) +
+  geom_smooth(span = 0.25, se = T) +
+  scale_x_continuous(breaks = seq(0, 130, 2)) +
+  ggtitle("Line Chart Matching CSDD With NA")
+ggsave("PR/study-level/line-chart-years-of-schooling-IRCC.jpeg")
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, YEARS_OF_SCHOOLING) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit() %>%
+  dplyr::group_by(YEARS_OF_SCHOOLING, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(YEARS_OF_SCHOOLING, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/study-level/table-years-of-schooling.csv")
+```
+
+
+#### Matching Addresses By Special Program
+
+```{r}
+dim_special_program <- haven::read_sas("dim_special_program.sas7bdat",
+  cols_only = c("SPECIAL_PROG_ID", "SPECIAL_PROG_LEVEL1_ENG_DESC")
+)
+pr_landing %>%
+  dplyr::left_join(dim_special_program, by = c("SPECIAL_PROGRAM" = "SPECIAL_PROG_ID")) %>%
+  dplyr::select(-SPECIAL_PROGRAM) -> pr_landing
+
+# remove form environment
+base::rm(dim_special_program)
+```
+
+```{r fig.height = 12, fig.width=16}
+# with NA
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, SPECIAL_PROG_LEVEL1_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(SPECIAL_PROG_LEVEL1_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(SPECIAL_PROG_LEVEL1_ENG_DESC, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  ggplot(data = ., aes(x = type, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~SPECIAL_PROG_LEVEL1_ENG_DESC, ncol = 2) +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 2) * 100, "%", "\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Set1")
+ggsave("PR/special-program/bar-plot.jpeg", height = 20, width = 10)
+
+# with NA
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, SPECIAL_PROG_LEVEL1_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(SPECIAL_PROG_LEVEL1_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(SPECIAL_PROG_LEVEL1_ENG_DESC, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/special-program/table.csv")
+```
+
+### Matching Addresses by Country and Continent
+
+```{r}
+dim_country <- haven::read_sas("dim_country.sas7bdat",
+  cols_only = c("COUNTRY_ID", "SHORT_ENG_DESC")
+)
+
+dim_continent <- read.csv("C:/Users/schmpas/Desktop/country_mapping.csv")
+
+pr_landing %>%
+  dplyr::left_join(dim_country, by = c("CITIZENSHIP" = "COUNTRY_ID")) %>%
+  dplyr::mutate(CITIZENSHIP_country = SHORT_ENG_DESC) %>%
+  dplyr::left_join(dim_country, by = c("COB" = "COUNTRY_ID")) %>%
+  dplyr::mutate(
+    COB_country = SHORT_ENG_DESC.y,
+    CITIZENSHIP = as.integer(CITIZENSHIP),
+    COB = as.integer(COB)
+  ) %>%
+  dplyr::left_join(dim_continent, by = c("CITIZENSHIP" = "COUNTRY_ID")) %>%
+  dplyr::mutate(CITIZENSHIP_continent = Census_level1) %>%
+  dplyr::left_join(dim_continent, by = c("COB" = "COUNTRY_ID")) %>%
+  dplyr::mutate(COB_continent = Census_level1.y) %>%
+  dplyr::select(-c(SHORT_ENG_DESC.y, SHORT_ENG_DESC.x.x, FOSS_CD.y:LONG_FRE_DESC.y, FOSS_CD:Census_level1.y, Census_level1.x)) -> pr_landing
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, CITIZENSHIP_country) %>%
+  tidyr::gather(match_CSDD_ARUID:match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::group_by(key, value, CITIZENSHIP_country) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(key, CITIZENSHIP_country) %>%
+  dplyr::mutate(
+    prop = round(n / sum(n), 4) * 100,
+    total = sum(n)
+  ) %>%
+  dplyr::arrange(desc(total)) %>%
+  write.csv("PR/citizenship/table-country.csv")
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, CITIZENSHIP_continent) %>%
+  tidyr::gather(match_CSDD_ARUID:match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::group_by(key, value, CITIZENSHIP_continent) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(key, CITIZENSHIP_continent) %>%
+  dplyr::mutate(
+    prop = round(n / sum(n), 4) * 100,
+    total = sum(n)
+  ) %>%
+  dplyr::arrange(desc(total)) %>%
+  write.csv("PR/citizenship/table-continent.csv")
+
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, COB_country) %>%
+  tidyr::gather(match_CSDD_ARUID:match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::group_by(key, value, COB_country) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(key, COB_country) %>%
+  dplyr::mutate(
+    prop = round(n / sum(n), 4) * 100,
+    total = sum(n)
+  ) %>%
+  dplyr::arrange(desc(total)) %>%
+  write.csv("PR/country-of-birth/table-country.csv")
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, COB_continent) %>%
+  tidyr::gather(match_CSDD_ARUID:match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::group_by(key, value, COB_continent) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(key, COB_continent) %>%
+  dplyr::mutate(
+    prop = round(n / sum(n), 4) * 100,
+    total = sum(n)
+  ) %>%
+  dplyr::arrange(desc(total)) %>%
+  write.csv("PR/country-of-birth/table-continent.csv")
+```
+
+### Matching Addresses by Application Category
+
+```{r}
+dim_application <- haven::read_sas("dim_application_cat.sas7bdat",
+  cols_only = c("APPLICATION_CAT", "MAIN_CATEGORY_ENG_DESC")
+)
+pr_landing %>%
+  dplyr::left_join(dim_application, by = c("APP_CAT" = "APPLICATION_CAT")) %>%
+  dplyr::select(-APP_CAT) -> pr_landing
+
+# remove form environment
+base::rm(dim_application)
+```
+
+```{r fig.height = 30, fig.width=16}
+# with NA
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, MAIN_CATEGORY_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(MAIN_CATEGORY_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(MAIN_CATEGORY_ENG_DESC, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  ggplot(data = ., aes(x = MAIN_CATEGORY_ENG_DESC, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~type, ncol = 1) +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 2) * 100, "%", "\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Set1") +
+  coord_flip()
+ggsave("PR/application-category/barchart.jpeg", height = 14, width = 10)
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, MAIN_CATEGORY_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(MAIN_CATEGORY_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(MAIN_CATEGORY_ENG_DESC, type) %>%
+  dplyr::mutate(
+    prop = round(n / sum(n), 4) * 100,
+    total = sum(n)
+  ) %>%
+  dplyr::arrange(desc(total)) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/application-category/table.csv")
+
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, MAIN_CATEGORY_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "IRCC_ARUID") %>%
+  dplyr::group_by(MAIN_CATEGORY_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(MAIN_CATEGORY_ENG_DESC, type) %>%
+  dplyr::mutate(prop = round((n / sum(n)) * 100, 1)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "IRCC_ARUID") %>%
+  # dplyr::filter(MAIN_CATEGORY_ENG_DESC != "Not stated") %>%
+  dplyr::mutate(total = sum(n)) %>%
+  dplyr::group_by(MAIN_CATEGORY_ENG_DESC) %>%
+  dplyr::mutate(dist = round((sum(n) / total) * 100, 1)) %>%
+  dplyr::filter(!is.na(value)) %>%
+  dplyr::mutate(
+    total = sum(n),
+    cons_rate = round((n / total) * 100, 1)
+  ) %>%
+  dplyr::filter(value == "Match") %>%
+  write.csv("PR/application-category/table-word.csv")
+```
+
+### Year at Landing
+
+```{r}
+ggplot(pr_landing, aes(x = LAND_DT)) +
+  geom_density()
+ggsave("PR/year-at-landing/density-plot.jpeg")
+
+pr_landing %>%
+  dplyr::mutate(LAND_DT = as.character(LAND_DT) %>%
+    stringr::str_sub(start = 1, end = 4) %>%
+    as.integer()) %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, LAND_DT) %>%
+  tidyr::gather(match_CSDD_ARUID:match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(LAND_DT, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(LAND_DT, type) %>%
+  dplyr::mutate(
+    prop = round(n / sum(n), 4) * 100,
+    total = sum(n)
+  ) %>%
+  dplyr::arrange(desc(total)) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/year-at-landing/table.csv")
+
+pr_landing %>%
+  dplyr::mutate(LAND_DT = as.character(LAND_DT) %>%
+    stringr::str_sub(start = 1, end = 4) %>%
+    as.integer()) %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, LAND_DT) %>%
+  tidyr::gather(match_CSDD_ARUID:match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "IRCC_ARUID") %>%
+  dplyr::group_by(LAND_DT, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(LAND_DT, type) %>%
+  dplyr::mutate(
+    prop = round(n / sum(n), 4) * 100,
+    total = sum(n)
+  ) %>%
+  dplyr::arrange(desc(total)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  ggplot(data = ., aes(x = type, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~LAND_DT, nrow = 1) +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 2), "%", "\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  ggtitle("The highest Proportion of Matching Addresses is Peaking \n Around 2010/2011 and Drops Significantly in 2013/2014") +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, vjust = 0.5, size = 25),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank()
+  ) +
+  scale_fill_brewer(palette = "Set1")
+ggsave("PR/year-at-landing/PRESENTATION.jpeg", width = 12)
+```
+
+### Mother Tongue
+
+```{r}
+dim_language <- haven::read_sas("dim_language.sas7bdat",
+  cols_only = c("LANGUAGE_ID", "LANGUAGE_GROUP_ENG_DESC")
+)
+pr_landing %>%
+  dplyr::left_join(dim_language, by = c("LANG_SPOKEN" = "LANGUAGE_ID")) -> pr_landing
+
+# remove form environment
+base::rm(dim_language)
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, LANGUAGE_GROUP_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(LANGUAGE_GROUP_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(LANGUAGE_GROUP_ENG_DESC, type) %>%
+  dplyr::mutate(
+    prop = round(n / sum(n), 4) * 100,
+    total = sum(n)
+  ) %>%
+  dplyr::arrange(desc(total)) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/mother-tongue/table.csv")
+
+pr_landing %>%
+  dplyr::mutate(LANGUAGE_GROUP_ENG_DESC = base::ifelse(pr_landing$LANGUAGE_GROUP_ENG_DESC %in% (pr_landing %>%
+    dplyr::group_by(LANGUAGE_GROUP_ENG_DESC) %>%
+    dplyr::summarise(n_lang = n()) %>%
+    dplyr::arrange(desc(n_lang)) %>%
+    dplyr::pull(LANGUAGE_GROUP_ENG_DESC) %>%
+    .[1:15]), LANGUAGE_GROUP_ENG_DESC, "Other")) -> pr_landing
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, LANGUAGE_GROUP_ENG_DESC) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(LANGUAGE_GROUP_ENG_DESC, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(LANGUAGE_GROUP_ENG_DESC, type) %>%
+  dplyr::mutate(
+    prop = round(n / sum(n), 4) * 100,
+    total = sum(n)
+  ) %>%
+  dplyr::arrange(desc(total)) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/mother-tongue/table-grouped.csv")
+```
+
+### NPR Before Landing
+
+```{r}
+pr_emp <- readr::read_csv("Data/pr_emp.csv") %>%
+  dplyr::mutate(type = "emp")
+pr_minister <- readr::read_csv("Data/pr_minister.csv") %>%
+  mutate(type = "minister")
+pr_refugee <- readr::read_csv("Data/pr_refugee.csv") %>%
+  dplyr::mutate(type = "refugee")
+pr_student <- readr::read_csv("Data/pr_students.csv") %>%
+  dplyr::mutate(type = "student")
+
+# all data sets must have the same columns for the rbind function
+data_sets <- list(pr_emp, pr_minister, pr_refugee, pr_student)
+
+column_names <- c()
+for (i in seq_along(data_sets)) {
+  column_names <- c(column_names, names(data_sets[[i]]))
+}
+column_names <- unique(column_names)
+
+for (i in seq_along(data_sets)) {
+  data_sets[[i]][, column_names[ !(column_names %in% (data_sets[[i]] %>%
+    names())) ]] <- NA
+}
+
+df_pr <- data_sets %>%
+  base::do.call(rbind, .)
+
+df_pr %>%
+  dplyr::select(., CID, type) %>%
+  dplyr::group_by(CID) %>%
+  dplyr::mutate(n = n()) %>%
+  dplyr::arrange(CID) %>%
+  dplyr::mutate(comb = type) -> comb
+
+# convert to matrix for faster iterations
+comb[, ] <- lapply(comb[, ], as.character)
+comb <- as.matrix(comb)
+
+
+for (i in (2:nrow(comb) - 1)) {
+  if (comb[i, "CID"] == comb[i + 1, "CID"]) {
+    comb[i + 1, "comb"] <- paste0(comb[i, "comb"], "_", comb[i + 1, "comb"])
+  }
+}
+
+# convert matrix back to data frame
+comb_comb <- as.data.frame(comb)
+
+# only keep distinct CIDs
+comb_comb %>%
+  dplyr::mutate(
+    comb = as.character(comb),
+    n = as.integer(as.character(n)),
+    CID = as.character(CID),
+    type = as.character(type)
+  ) %>%
+  dplyr::arrange(CID, desc(comb)) %>%
+  dplyr::distinct(CID, .keep_all = TRUE) %>%
+  dplyr::select(-type) -> comb_comb
+
+comb_comb %>%
+  dplyr::left_join(df_pr, by = "CID") %>%
+  dplyr::distinct(CID) -> df_pr
+
+pr_landing %>%
+  dplyr::left_join(df_pr %>%
+    dplyr::mutate(NPR_before = 1), by = c("cid" = "CID")) %>%
+  dplyr::mutate(NPR_before = base::ifelse(is.na(NPR_before), 0, NPR_before)) -> pr_landing
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, NPR_before) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::group_by(value, type, NPR_before) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(type, NPR_before) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::mutate(total = sum(n)) %>%
+  dplyr::arrange(type, NPR_before) %>%
+  dplyr::ungroup() %>%
+  write.csv("PR/NPR-before-landing/overall-table-aruid.csv")
+```
+
+### David's Length of Address Validity
+
+```{r}
+pr_cid <- haven::read_sas("cid_pr_address.sas7bdat")
+
+pr_landing %>%
+  dplyr::inner_join(pr_cid, by = c("cid" = "CID")) -> pr_landing
+
+pr_landing %>%
+  dplyr::mutate(length_validity = as.integer(lubridate::ymd("2016-05-10") - (as.character(ADDRESS_EFF_DT) %>%
+    lubridate::ymd()))) -> pr_landing
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, length_validity) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit() %>%
+  dplyr::group_by(length_validity, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(length_validity, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "CSDD_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  dplyr::filter(value == "Match") %>%
+  dplyr::arrange(desc(prop)) %>%
+  ggplot(., aes(x = length_validity, y = prop)) +
+  geom_smooth(span = 0.1, se = F) +
+  ggtitle("Line Chart Matching CSDD With NA")
+
+ggsave("PR/length-address-validity/line-chart-csdd.jpeg")
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, length_validity) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit() %>%
+  dplyr::group_by(length_validity, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(length_validity, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "CSDD_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  write.csv(., "PR/length-address-validity/table-csdd.csv")
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, length_validity) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit() %>%
+  dplyr::group_by(length_validity, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(length_validity, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "IRCC_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  dplyr::filter(value == "Match") %>%
+  dplyr::arrange(desc(prop)) %>%
+  ggplot(., aes(x = length_validity, y = prop)) +
+  geom_smooth(span = 0.1, se = F) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, vjust = 0.5, size = 25),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(size = 20),
+    axis.text.y = element_text(size = 20)
+  ) +
+  ggtitle("The Lowest Proportion of Matching Addresses Occurs for PRs \n who have an Address Which is Valid for Around 3300 Days")
+ggsave("PR/length-address-validity/line-chart-ircc-PRESENTATION.jpeg", width = 12)
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, length_validity) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit() %>%
+  dplyr::mutate(valid_cat = cut(length_validity, breaks = c(-1, 30, 182, 365, 730, Inf))) %>%
+  dplyr::group_by(valid_cat, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(valid_cat, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "IRCC_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  dplyr::mutate(valid_cat = factor(valid_cat, levels = unique(valid_cat))) %>%
+  dplyr::mutate(value = forcats::fct_explicit_na(value)) %>%
+  dplyr::mutate(value = factor(.$value, levels = c("(Missing)", "No Match", "Match"))) %>%
+  dplyr::filter(!(is.na(valid_cat))) %>%
+  ggplot(., aes(x = valid_cat, y = prop, fill = value)) +
+  geom_bar(stat = "identity") +
+  ggtitle("The Longer an an Address is Valid \n the Lower the Consistency Rate") +
+  geom_text(aes(label = paste0(value, "\n", round(prop, 4) * 100, "%\n", n)), position = position_stack(vjust = 0.5)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Set1") +
+  theme(
+    plot.title = element_text(size = 20, hjust = 0.5, vjust = 0.5),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(size = 15),
+    axis.text.y = element_text(size = 15)
+  )
+ggsave("PR/length-address-validity/bar-chart-ircc-PRESENTATION.jpeg", width = 10, height = 8)
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, length_validity) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit() %>%
+  dplyr::group_by(length_validity, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(length_validity, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "IRCC_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  write.csv(., "PR/length-address-validity/table-ircc.csv")
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, length_validity) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  dplyr::mutate(valid_cat = cut(length_validity, breaks = c(-1, 30, 182, 365, 730, Inf))) %>%
+  # na.omit() %>%
+  dplyr::group_by(valid_cat, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(valid_cat, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(type == "IRCC_ARUID") %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  write.csv(., "PR/length-address-validity/table-ircc-categories.csv")
+```
+
+### Analysis of Source Flags
+
+```{r}
+pr_landing[, "SOURCE_FLAGS"] %>%
+  dplyr::mutate(SOURCE_FLAGS = stringr::str_split(SOURCE_FLAGS, pattern = "")) -> source_flags
+
+base::do.call(rbind, source_flags$SOURCE_FLAGS) %>%
+  dplyr::as_tibble() %>%
+  purrr::set_names(c(
+    "SIN_REGISTRY", "IDENT", "DEPENDENT_REGISTRY", "CCTB",
+    "PR", "TR", "BIRTHS", "INDIAN_REGISTRY", "FISCAL_INDICATORS", "BLANK"
+  )) %>%
+  purrr::imap_dfr(~ ifelse(.x == 1, .y, "No IDENT")) %>%
+  dplyr::select(IDENT) %>%
+  dplyr::bind_cols(pr_landing, .) -> pr_landing
+
+pr_landing[, "IDENT"] <- lapply(pr_landing[, "IDENT"], chr_to_NA)
+
+pr_landing %>%
+  dplyr::select(match_CSDD_ARUID, match_IRCC_ARUID, IDENT) %>%
+  tidyr::gather(match_CSDD_ARUID, match_IRCC_ARUID, key = "key", value = "value") %>%
+  dplyr::mutate(type = stringr::str_extract_all(.$key, "(CSDD.*|IRCC.*)") %>%
+    unlist()) %>%
+  dplyr::filter(value == "Match" | value == "No Match" | is.na(value)) %>%
+  dplyr::filter(type == "CSDD_ARUID" | type == "IRCC_ARUID") %>%
+  # na.omit() %>%
+  dplyr::group_by(IDENT, type, value) %>%
+  dplyr::summarise(n = n()) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(IDENT, type) %>%
+  dplyr::mutate(prop = n / sum(n)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(prop = round(prop, 2)) %>%
+  write.csv(., "PR/source-flags/table-ircc-source-flags.csv")
+```
+
+```{r}
+# transform column names to write to a SAS file
+names(pr_landing) <- stringr::str_replace_all(colnames(pr_landing), "\\.", "_")
+
+pr_landing %>%
+  dplyr::mutate(age = as.integer((lubridate::ymd("2016-05-10") - lubridate::as_date(BIRTH_DT)) / 365)) %>%
+  dplyr::mutate(age_cat = cut(.$age, breaks = c(-1, 14, 19, 24, 29, 34, 39, 44, 49, 54, 59, 64, 130))) %>%
+  dplyr::mutate(valid_cat = cut(length_validity, breaks = c(-1, 30, 182, 365, 730, Inf))) %>%
+  dplyr::mutate(LAND_DT = as.character(LAND_DT) %>%
+    stringr::str_sub(start = 1, end = 4)) %>%
+  dplyr::mutate(PROVINCE_EN = ifelse(PROVINCE_EN %in% c("Northwest Territories", "Yukon", "Nunavut"), "Territories", PROVINCE_EN)) -> pr_landing
+
+pr_landing %>%
+  dplyr::select(
+    match_IRCC_ARUID,
+    LONG_ENG_DESC_x,
+    LONG_ENG_DESC_y,
+    COB_continent,
+    MAIN_CATEGORY_ENG_DESC,
+    NPR_before,
+    age_cat,
+    valid_cat,
+    LAND_DT,
+    PROVINCE_EN
+  ) %>%
+  purrr::pmap(~ c(...)) %>%
+  purrr::map(~ ifelse(sum(is.na(.x)) > 0, FALSE, TRUE)) %>%
+  purrr::flatten_lgl() %>%
+  {
+    dplyr::mutate(pr_landing, missing = .)
+  } %>%
+  dplyr::select(
+    match_IRCC_ARUID,
+    LONG_ENG_DESC_x,
+    LONG_ENG_DESC_y,
+    COB_continent,
+    MAIN_CATEGORY_ENG_DESC,
+    NPR_before,
+    age_cat,
+    valid_cat,
+    LAND_DT,
+    missing,
+    PROVINCE_EN
+  ) %>%
+  dplyr::filter(LONG_ENG_DESC_y == "Single" | LONG_ENG_DESC_y == "Widowed" | LONG_ENG_DESC_y == "Married" |
+    LONG_ENG_DESC_y == "Divorced" | LONG_ENG_DESC_y == "Common Law" | LONG_ENG_DESC_y == "Separated") %>%
+  dplyr::filter(COB_continent != "Not stated") -> pr_landing
+
+pr_landing %>%
+  dplyr::mutate_if(is.factor, as.character) -> pr_landing
+
+haven::write_sav(pr_landing, "Data/pr_logit.sav")
+pr_landing <- haven::read_sav("Data/pr_logit.sav")
+```
+
